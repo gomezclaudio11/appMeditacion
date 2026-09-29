@@ -56,6 +56,10 @@ function RootLayoutNav() {
             name="player/[id]"
             options={{ presentation: "modal", headerShown: false }}
           />
+          <Stack.Screen
+            name="youtube/[id]"
+            options={{ presentation: "modal", headerShown: false }}
+          />
         </Stack>
       </ThemeProvider>
     </AudioProvider>

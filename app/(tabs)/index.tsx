@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { MEDITATIONS } from '../../src/data/meditations';
 import { Meditation } from '../../src/types/meditation';
@@ -48,6 +48,8 @@ export default function ExploreScreen() {
           };
         });
         setMeditationsList(dynamicMeditations);
+      } else {
+        setMeditationsList(MEDITATIONS);
       }
       setLoading(false);
     };

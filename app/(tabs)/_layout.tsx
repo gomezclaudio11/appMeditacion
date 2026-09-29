@@ -42,6 +42,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="youtube"
+        options={{
+          title: 'Videos',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="logo-youtube" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Progreso',
