@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,15 +7,19 @@ import {
   TouchableOpacity,
   Image,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MEDITATIONS } from '../../src/data/meditations';
 import { Meditation } from '../../src/types/meditation';
 import { Ionicons } from '@expo/vector-icons';
+import { fetchMeditationMusic } from '../../src/services/jamendoService';
 
 export default function ExploreScreen() {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [meditationsList, setMeditationsList] = useState<Meditation[]>(MEDITATIONS);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const categories = [
     { id: 'all', label: 'Todas' },
@@ -25,15 +29,48 @@ export default function ExploreScreen() {
     { id: 'focus', label: 'Enfoque' },
   ];
 
+  useEffect(() => {
+    const loadApiMeditations = async () => {
+      setLoading(true);
+      const tracks = await fetchMeditationMusic('meditation', 15);
+      if (tracks && tracks.length > 0) {
+        const dynamicMeditations: Meditation[] = tracks.map((track, index) => {
+          const categoriesList: ("beginner" | "sleep" | "focus" | "anxiety")[] = ['beginner', 'sleep', 'focus', 'anxiety'];
+          return {
+            id: track.id,
+            title: track.name,
+            description: `Sesión guiada por ${track.artist_name}. Encuentra calma y bienestar.`,
+            duration: track.duration > 0 ? track.duration : 300,
+            audioUrl: track.audio,
+            imageUrl: track.image || 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=800&q=80',
+            category: categoriesList[index % categoriesList.length],
+            author: track.artist_name,
+          };
+        });
+        setMeditationsList(dynamicMeditations);
+      }
+      setLoading(false);
+    };
+
+    loadApiMeditations();
+  }, []);
+
   const filteredMeditations =
     selectedCategory === 'all'
-      ? MEDITATIONS
-      : MEDITATIONS.filter((m) => m.category === selectedCategory);
+      ? meditationsList
+      : meditationsList.filter((m) => m.category === selectedCategory);
 
   const handlePressMeditation = (meditation: Meditation) => {
     router.push({
       pathname: '/player/[id]',
-      params: { id: meditation.id },
+      params: {
+        id: meditation.id,
+        title: meditation.title,
+        description: meditation.description,
+        audioUrl: meditation.audioUrl,
+        imageUrl: meditation.imageUrl,
+        author: meditation.author,
+      },
     });
   };
 
@@ -71,33 +108,40 @@ export default function ExploreScreen() {
         </ScrollView>
 
         {/* Lista de Meditaciones */}
-        <View style={styles.listContainer}>
-          {filteredMeditations.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={styles.card}
-              activeOpacity={0.8}
-              onPress={() => handlePressMeditation(item)}>
-              <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
-              <View style={styles.cardOverlay} />
-              <View style={styles.cardContent}>
-                <View style={styles.badgeContainer}>
-                  <Text style={styles.badgeText}>
-                    {Math.round(item.duration / 60)} min
+        {loading ? (
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color="#6366f1" />
+            <Text style={styles.loaderText}>Cargando meditaciones...</Text>
+          </View>
+        ) : (
+          <View style={styles.listContainer}>
+            {filteredMeditations.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.card}
+                activeOpacity={0.8}
+                onPress={() => handlePressMeditation(item)}>
+                <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+                <View style={styles.cardOverlay} />
+                <View style={styles.cardContent}>
+                  <View style={styles.badgeContainer}>
+                    <Text style={styles.badgeText}>
+                      {Math.round(item.duration / 60)} min
+                    </Text>
+                  </View>
+                  <Text style={styles.cardTitle}>{item.title}</Text>
+                  <Text style={styles.cardDescription} numberOfLines={2}>
+                    {item.description}
                   </Text>
+                  <View style={styles.authorRow}>
+                    <Ionicons name="mic-outline" size={14} color="#d1d5db" />
+                    <Text style={styles.authorText}>{item.author}</Text>
+                  </View>
                 </View>
-                <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardDescription} numberOfLines={2}>
-                  {item.description}
-                </Text>
-                <View style={styles.authorRow}>
-                  <Ionicons name="mic-outline" size={14} color="#d1d5db" />
-                  <Text style={styles.authorText}>{item.author}</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -153,6 +197,15 @@ const styles = StyleSheet.create({
   },
   categoryTextActive: {
     color: '#ffffff',
+  },
+  loaderContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  loaderText: {
+    color: '#94a3b8',
+    marginTop: 12,
+    fontSize: 14,
   },
   listContainer: {
     paddingHorizontal: 20,

@@ -1,8 +1,28 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, Text, View, SafeAreaView, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getStats, UserStats } from '../../src/services/statsService';
+import { useFocusEffect } from 'expo-router';
 
 export default function ProfileScreen() {
+  const [stats, setStats] = useState<UserStats>({
+    streak: 3,
+    totalMinutes: 25,
+    sessionsCount: 4,
+    lastDate: null,
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserStats();
+    }, [])
+  );
+
+  const loadUserStats = async () => {
+    const data = await getStats();
+    setStats(data);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -18,17 +38,17 @@ export default function ProfileScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Ionicons name="flame" size={28} color="#f59e0b" />
-            <Text style={styles.statNumber}>3</Text>
+            <Text style={styles.statNumber}>{stats.streak}</Text>
             <Text style={styles.statLabel}>Días de racha</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="time" size={28} color="#3b82f6" />
-            <Text style={styles.statNumber}>25</Text>
+            <Text style={styles.statNumber}>{stats.totalMinutes}</Text>
             <Text style={styles.statLabel}>Minutos</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="checkmark-circle" size={28} color="#10b981" />
-            <Text style={styles.statNumber}>4</Text>
+            <Text style={styles.statNumber}>{stats.sessionsCount}</Text>
             <Text style={styles.statLabel}>Sesiones</Text>
           </View>
         </View>
@@ -46,7 +66,7 @@ export default function ProfileScreen() {
         <View style={styles.infoSection}>
           <Text style={styles.infoTitle}>Sobre tu App de Meditación</Text>
           <Text style={styles.infoDescription}>
-            Estás utilizando la versión 1.0.0 (MVP Gratuito). Disfruta de tus meditaciones diarias y cultiva la calma interior.
+            Estás utilizando la versión 1.1.0. Disfruta de tus meditaciones diarias, cultiva la calma interior y registra tu progreso automáticamente.
           </Text>
         </View>
       </ScrollView>

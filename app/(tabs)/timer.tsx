@@ -1,87 +1,143 @@
-import React, { useState, useEffect } from 'react';
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
-  SafeAreaView,
-  ScrollView,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useAudioPlayer } from '../../src/hooks/useAudioPlayer';
-import { AMBIENT_SOUNDS } from '../../src/data/meditations';
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useGlobalAudio } from "../../src/context/AudioContext";
+import { recordSession } from "../../src/services/statsService";
+import { fetchMeditationMusic, JamendoTrack } from "../../src/services/jamendoService";
+import { playTibetanBowl } from "../../src/services/soundService";
 
 export default function TimerScreen() {
   const [durationMinutes, setDurationMinutes] = useState<number>(5);
   const [timeLeft, setTimeLeft] = useState<number>(5 * 60);
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [selectedAmbient, setSelectedAmbient] = useState<string | null>(null);
 
-  const ambientPlayer = useAudioPlayer();
+  // ID de la pista de la API seleccionada (o null para silencio)
+  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [jamendoTracks, setJamendoTracks] = useState<JamendoTrack[]>([]);
+  const [loadingMusic, setLoadingMusic] = useState<boolean>(true);
+
+  const router = useRouter();
+  const ambientPlayer = useGlobalAudio();
 
   const durations = [3, 5, 10, 15, 20, 30];
 
+  // Cargar música de la API al montar
+  useEffect(() => {
+    const loadMusic = async () => {
+      setLoadingMusic(true);
+      const tracks = await fetchMeditationMusic("ambient", 10);
+      setJamendoTracks(tracks);
+      setLoadingMusic(false);
+    };
+    loadMusic();
+  }, []);
+
+  // 1. Sincronizar el tiempo restante si cambia la duración elegida y el reloj no está activo
   useEffect(() => {
     if (!isRunning) {
       setTimeLeft(durationMinutes * 60);
     }
   }, [durationMinutes]);
 
+  // 2. Intervalo de la cuenta regresiva del temporizador
   useEffect(() => {
-    let interval: any = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     if (isRunning && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft((prev) => prev - 1);
       }, 1000);
     } else if (timeLeft === 0 && isRunning) {
+      // Al finalizar el tiempo: detenemos el estado, el audio, reproducimos cuenco y registramos la sesión
       setIsRunning(false);
-      ambientPlayer.stopSound();
+      ambientPlayer.stopAudio();
+      playTibetanBowl();
+      recordSession(durationMinutes * 60);
     }
-    return () => clearInterval(interval);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [isRunning, timeLeft]);
 
+  // 3. Manejar la selección de silencio o pista de la API
+  const handleSelectTrack = async (id: string | null, url?: string, title?: string) => {
+    setSelectedTrackId(id);
+
+    if (id === null) {
+      await ambientPlayer.stopAudio();
+    } else if (url && title) {
+      if (isRunning) {
+        await ambientPlayer.playAudio(url, title, true);
+      }
+    }
+  };
+
+  // 4. Iniciar o pausar el temporizador junto con el audio
   const toggleTimer = async () => {
     if (!isRunning) {
       setIsRunning(true);
-      if (selectedAmbient) {
-        const soundObj = AMBIENT_SOUNDS.find((s) => s.id === selectedAmbient);
-        if (soundObj) {
-          await ambientPlayer.loadAndPlaySound(soundObj.audioUrl);
+      playTibetanBowl(); // Sonido de cuenco al iniciar
+
+      // Si hay una pista seleccionada, la activamos en bucle
+      if (selectedTrackId !== null) {
+        const trackObj = jamendoTracks.find((t) => t.id === selectedTrackId);
+        if (trackObj?.audio) {
+          await ambientPlayer.playAudio(trackObj.audio, trackObj.name, true);
         }
       }
     } else {
       setIsRunning(false);
-      await ambientPlayer.stopSound();
+      await ambientPlayer.stopAudio();
     }
   };
 
+  // 5. Reiniciar el temporizador
   const resetTimer = async () => {
     setIsRunning(false);
     setTimeLeft(durationMinutes * 60);
-    await ambientPlayer.stopSound();
+    await ambientPlayer.stopAudio();
   };
 
+  // 6. Formatear segundos a mm:ss con dos dígitos fijos
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>Temporizador de Meditación</Text>
-        <Text style={styles.subtitle}>Encuentra tu propio espacio de silencio</Text>
+        <Text style={styles.subtitle}>
+          Encuentra tu propio espacio de silencio
+        </Text>
 
         {/* Círculo de Tiempo */}
         <View style={styles.timerCircle}>
           <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
           <Text style={styles.timerLabel}>
-            {isRunning ? 'Meditando...' : 'Listo para empezar'}
+            {isRunning ? "Meditando..." : "Listo para empezar"}
           </Text>
+          {ambientPlayer.currentTitle && (
+            <Text style={styles.playingText} numberOfLines={1}>
+              🎵 {ambientPlayer.currentTitle}
+            </Text>
+          )}
         </View>
 
-        {/* Selector de Duración (solo si no está corriendo) */}
+        {/* Selector de Duración (visible solo cuando el temporizador no está corriendo) */}
         {!isRunning && (
           <View style={styles.durationSection}>
             <Text style={styles.sectionTitle}>Duración (minutos)</Text>
@@ -93,12 +149,15 @@ export default function TimerScreen() {
                     styles.durationButton,
                     durationMinutes === mins && styles.durationButtonActive,
                   ]}
-                  onPress={() => setDurationMinutes(mins)}>
+                  onPress={() => setDurationMinutes(mins)}
+                >
                   <Text
                     style={[
                       styles.durationButtonText,
-                      durationMinutes === mins && styles.durationButtonTextActive,
-                    ]}>
+                      durationMinutes === mins &&
+                        styles.durationButtonTextActive,
+                    ]}
+                  >
                     {mins}m
                   </Text>
                 </TouchableOpacity>
@@ -107,42 +166,51 @@ export default function TimerScreen() {
           </View>
         )}
 
-        {/* Selector de Sonido Ambiental */}
+        {/* Selector de Música Ambiental (API) */}
         <View style={styles.ambientSection}>
-          <Text style={styles.sectionTitle}>Sonido Ambiental (Opcional)</Text>
-          <View style={styles.ambientRow}>
+          <Text style={styles.sectionTitle}>Música Ambiental</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.ambientScroll}
+          >
+            {/* Silencio */}
             <TouchableOpacity
               style={[
                 styles.ambientCard,
-                selectedAmbient === null && styles.ambientCardActive,
+                selectedTrackId === null && styles.ambientCardActive,
               ]}
-              onPress={() => setSelectedAmbient(null)}>
-              <Ionicons name="volume-mute-outline" size={24} color="#f8fafc" />
+              onPress={() => handleSelectTrack(null)}
+            >
+              <View style={styles.cardIconContainer}>
+                <Ionicons name="volume-mute-outline" size={24} color="#f8fafc" />
+              </View>
               <Text style={styles.ambientText}>Silencio</Text>
             </TouchableOpacity>
-            {AMBIENT_SOUNDS.map((sound) => (
-              <TouchableOpacity
-                key={sound.id}
-                style={[
-                  styles.ambientCard,
-                  selectedAmbient === sound.id && styles.ambientCardActive,
-                ]}
-                onPress={() => setSelectedAmbient(sound.id)}>
-                <Ionicons
-                  name={
-                    sound.id === 'rain'
-                      ? 'rainy-outline'
-                      : sound.id === 'forest'
-                      ? 'leaf-outline'
-                      : 'water-outline'
-                  }
-                  size={24}
-                  color="#f8fafc"
-                />
-                <Text style={styles.ambientText}>{sound.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+
+            {/* Pistas de la API de Jamendo */}
+            {loadingMusic ? (
+              <View style={styles.loaderCard}>
+                <ActivityIndicator size="small" color="#6366f1" />
+              </View>
+            ) : (
+              jamendoTracks.map((track) => (
+                <TouchableOpacity
+                  key={track.id}
+                  style={[
+                    styles.ambientCard,
+                    selectedTrackId === track.id && styles.ambientCardActive,
+                  ]}
+                  onPress={() => handleSelectTrack(track.id, track.audio, track.name)}
+                >
+                  <Image source={{ uri: track.image }} style={styles.cardImage} />
+                  <Text style={styles.ambientText} numberOfLines={1}>
+                    {track.name}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
         </View>
 
         {/* Botones de Control */}
@@ -150,14 +218,15 @@ export default function TimerScreen() {
           <TouchableOpacity
             style={styles.mainButton}
             onPress={toggleTimer}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+          >
             <Ionicons
-              name={isRunning ? 'pause' : 'play'}
+              name={isRunning ? "pause" : "play"}
               size={28}
               color="#ffffff"
             />
             <Text style={styles.mainButtonText}>
-              {isRunning ? 'Pausar' : 'Comenzar'}
+              {isRunning ? "Pausar" : "Comenzar"}
             </Text>
           </TouchableOpacity>
 
@@ -175,140 +244,175 @@ export default function TimerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: "#0f172a",
   },
   content: {
     padding: 20,
-    alignItems: 'center',
+    alignItems: "center",
     paddingBottom: 40,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#f8fafc',
-    textAlign: 'center',
+    fontWeight: "bold",
+    color: "#f8fafc",
+    textAlign: "center",
   },
   subtitle: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: "#94a3b8",
     marginTop: 4,
-    marginBottom: 30,
-    textAlign: 'center',
+    marginBottom: 24,
+    textAlign: "center",
   },
   timerCircle: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     borderWidth: 4,
-    borderColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 30,
-    backgroundColor: 'rgba(99, 102, 241, 0.05)',
+    borderColor: "#6366f1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+    backgroundColor: "rgba(99, 102, 241, 0.05)",
+    padding: 10,
   },
   timerText: {
-    fontSize: 44,
-    fontWeight: 'bold',
-    color: '#ffffff',
+    fontSize: 40,
+    fontWeight: "bold",
+    color: "#ffffff",
   },
   timerLabel: {
     fontSize: 14,
-    color: '#94a3b8',
-    marginTop: 6,
+    color: "#94a3b8",
+    marginTop: 4,
+  },
+  playingText: {
+    fontSize: 12,
+    color: "#818cf8",
+    marginTop: 4,
+    textAlign: "center",
+    maxWidth: "90%",
   },
   durationSection: {
-    width: '100%',
-    marginBottom: 24,
+    width: "100%",
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#e2e8f0',
+    fontWeight: "600",
+    color: "#e2e8f0",
     marginBottom: 12,
   },
   durationGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   durationButton: {
     flex: 1,
     paddingVertical: 10,
-    backgroundColor: '#1e293b',
+    backgroundColor: "#1e293b",
     borderRadius: 10,
     marginHorizontal: 4,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: "#334155",
   },
   durationButtonActive: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: "#6366f1",
+    borderColor: "#6366f1",
   },
   durationButtonText: {
-    color: '#94a3b8',
+    color: "#94a3b8",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   durationButtonTextActive: {
-    color: '#ffffff',
+    color: "#ffffff",
   },
   ambientSection: {
-    width: '100%',
-    marginBottom: 30,
+    width: "100%",
+    marginBottom: 24,
   },
-  ambientRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  ambientScroll: {
+    paddingVertical: 4,
   },
   ambientCard: {
-    flex: 1,
-    backgroundColor: '#1e293b',
-    paddingVertical: 12,
+    width: 95,
+    backgroundColor: "#1e293b",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 4,
+    alignItems: "center",
+    marginRight: 10,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: "#334155",
   },
   ambientCardActive: {
-    borderColor: '#6366f1',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderColor: "#6366f1",
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+  },
+  cardIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#334155",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  cardImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#334155",
+    marginBottom: 6,
+  },
+  loaderCard: {
+    width: 95,
+    height: 80,
+    backgroundColor: "#1e293b",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#334155",
+    marginRight: 10,
   },
   ambientText: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    marginTop: 6,
+    color: "#cbd5e1",
+    fontSize: 11,
+    textAlign: "center",
   },
   controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   mainButton: {
-    flexDirection: 'row',
-    backgroundColor: '#6366f1',
+    flexDirection: "row",
+    backgroundColor: "#6366f1",
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 30,
-    alignItems: 'center',
-    shadowColor: '#6366f1',
+    alignItems: "center",
+    shadowColor: "#6366f1",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
   mainButtonText: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginLeft: 10,
   },
   resetButton: {
     marginLeft: 16,
-    backgroundColor: '#1e293b',
+    backgroundColor: "#1e293b",
     padding: 16,
     borderRadius: 30,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: "#334155",
   },
 });
